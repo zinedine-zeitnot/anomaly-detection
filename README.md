@@ -19,7 +19,7 @@ _ECR prerequisite_: You'll need to have previously set up an [ECR](https://aws.a
 
 Once you've got both, creation and authentication are achieved via a couple of shell commands:
 ```bash
-$ aws ecr create-repository --repository-name demo-app-hello-world --image-tag-mutability IMMUTABLE --image-scanning-configuration scanOnPush=true
+$ aws ecr create-repository --repository-name <your-ecr-repo-name, e.g. anomaly-detection-app-repository> --image-tag-mutability IMMUTABLE --image-scanning-configuration scanOnPush=true
 
 $ aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account id>.dkr.ecr.<region>.amazonaws.com
 ```
