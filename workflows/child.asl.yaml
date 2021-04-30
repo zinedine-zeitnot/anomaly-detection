@@ -1,0 +1,61 @@
+---
+StartAt: WorkflowSafetyBelt
+States:
+  WorkflowSafetyBelt:
+    Type: Parallel
+    Branches:
+    - StartAt: Load Data
+      States:
+        Load Data:
+          Type: Task
+          Resource: "${LoadDataArn}"
+          ResultPath: "$.data"
+          Next: Dissect Data
+        Dissect Data:
+          Type: Task
+          Resource: "${DissectDataArn}"
+          ResultPath: "$.switchpointTrio"
+          Next: Add Extra Anomaly Metrics
+        Add Extra Anomaly Metrics:
+          Type: Task
+          Resource: "${AddExtraAnomalyMetricsArn}"
+          ResultPath: "$.anomalyMetrics"
+          Next: Anomaly?
+        Anomaly?:
+          Type: Choice
+          Choices:
+          - And:
+            - Variable: "$.anomalyMetrics.preSwitchAverageOverPostSwitchAverage"
+              NumericGreaterThanEquals: 2
+            - Variable: "$.anomalyMetrics.switchpoint"
+              NumericGreaterThanEquals: 5
+            - Variable: "$.anomalyMetrics.switchpoint"
+              NumericLessThanEquals: 35
+            Next: 'Yes'
+          Default: 'No'
+        'No':
+          Type: Pass
+          OutputPath: null
+          End: true
+        'Yes':
+          Type: Pass
+          OutputPath: "$.receiverId"
+          End: true
+    Retry:
+    - ErrorEquals:
+      - States.ALL
+      IntervalSeconds: 5
+      BackoffRate: 2
+      MaxAttempts: 5
+    Catch:
+    - ErrorEquals:
+      - States.ALL
+      ResultPath: "$.error"
+      Next: Failure
+    Next: Success
+  Success:
+    Type: Pass
+    InputPath: "$[0]" 
+    End: true
+  Failure:
+    Type: Fail

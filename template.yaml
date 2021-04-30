@@ -1,0 +1,154 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+
+Parameters:
+  ReceiversDataBucket:
+    Type: String
+  AnomalyNotificationTopicName:
+    Type: String
+  PrincipalAnomalySubscriberEmail:
+    Type: String
+
+
+Resources:
+  MasterWorkflow:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Type: STANDARD
+      Role: !GetAtt MasterWorkflowIAMRole.Arn
+      DefinitionUri: workflows/master.asl.yaml
+      DefinitionSubstitutions:
+        ChildWorkflowArn: !Ref ChildWorkflow
+        PrepareAnomalyNotificationArn: !GetAtt PrepareAnomalyNotification.Arn
+        PrepareAnomalyInspectionInputArn: !GetAtt PrepareAnomalyInspectionInput.Arn
+        AnomalyTopicArn: !Ref AnomalyTopic
+            
+  ChildWorkflow:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Type: EXPRESS
+      DefinitionUri: workflows/child.asl.yaml
+      DefinitionSubstitutions:
+        LoadDataArn: !GetAtt LoadData.Arn
+        DissectDataArn: !GetAtt DissectData.Arn
+        AddExtraAnomalyMetricsArn: !GetAtt AddExtraAnomalyMetrics.Arn
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref LoadData
+        - LambdaInvokePolicy:
+            FunctionName: !Ref DissectData
+        - LambdaInvokePolicy:
+            FunctionName: !Ref AddExtraAnomalyMetrics
+      
+  LoadData:
+    Type: AWS::Serverless::Function #to define our LoadData resource as a Lambda function
+    Properties:
+      Runtime: python3.7
+      Handler: lambda_handler.handler
+      CodeUri: ./functions/loadData #the location of the Lambda's code folder from the project root
+      Timeout: 10 #seconds
+      MemorySize: 256 #MB
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref ReceiversDataBucket
+            
+  DissectData:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      Timeout: 60
+      MemorySize: 1024
+    Metadata:
+      DockerContext: ./functions/dissectData
+      Dockerfile: Dockerfile
+
+  AddExtraAnomalyMetrics:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./functions/addExtraAnomalyMetrics
+      Handler: lambda_handler.handler
+      Runtime: python3.7
+      Timeout: 3
+
+  PrepareAnomalyNotification:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./functions/prepareAnomalyNotification
+      Handler: lambda_handler.handler
+      Runtime: python3.7
+      Timeout: 3
+      
+  PrepareAnomalyInspectionInput:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./functions/prepareAnomalyInspectionInput
+      Handler: lambda_handler.handler
+      Runtime: python3.7
+      Timeout: 30
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref ReceiversDataBucket
+
+  AnomalyTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Ref AnomalyNotificationTopicName
+      Subscription: 
+        - Endpoint: !Ref PrincipalAnomalySubscriberEmail
+          Protocol: email
+
+  MasterWorkflowIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - !Sub states.${AWS::Region}.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaInvokePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !GetAtt PrepareAnomalyNotification.Arn
+                  - !GetAtt PrepareAnomalyInspectionInput.Arn
+        - PolicyName: SNSPublishMessagePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource:
+                  - !Ref AnomalyTopic
+        - PolicyName: ChildWorkflowExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource:
+                  - !Ref ChildWorkflow
+              # The following stanzas are required for .sync invocations of workflows:
+              - Effect: Allow
+                Action:
+                  - states:DescribeExecution
+                  - states:StopExecution
+                Resource:
+                  - !Ref ChildWorkflow
+              - Effect: Allow
+                Action:
+                  - events:PutTargets
+                  - events:PutRule
+                  - events:DescribeRule
+                Resource:
+                  - !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForStepFunctionsExecutionRule"

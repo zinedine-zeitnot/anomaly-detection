@@ -1,0 +1,3 @@
+## Credits:
+
+The dissection method used in the `DataDissector` module to find a switchpoint in a count data series originally comes from a modeling example exposed by Cameron Davidson-Pilon in his book Bayesian Methods for Hackers ([*Chapter 1, Example: Inferring behaviour from text-message data*](https://nbviewer.jupyter.org/github/CamDavidsonPilon/Probabilistic-Programming-and-Bayesian-Methods-for-Hackers/blob/master/Chapter1_Introduction/Ch1_Introduction_PyMC3.ipynb)). We mostly just took and reorganised a bit differently the [Tensorflow Probability port](https://github.com/CamDavidsonPilon/Probabilistic-Programming-and-Bayesian-Methods-for-Hackers/blob/master/Chapter1_Introduction/Ch1_Introduction_TFP.ipynb) of the example.

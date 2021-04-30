@@ -1,0 +1,38 @@
+---
+StartAt: Prepare Anomaly Inspection Input
+States:
+  Prepare Anomaly Inspection Input:
+    Type: Task
+    Resource: "${PrepareAnomalyInspectionInputArn}"
+    Next: Inspect Receivers Fleet
+  Inspect Receivers Fleet:
+    Type: Map
+    ItemsPath: "$.receiversIds"
+    Parameters:
+      receiverId.$: "$$.Map.Item.Value"
+      receiversDataBucket.$: "$.receiversDataBucket"
+    Iterator:
+      StartAt: Inspect Receiver
+      States:
+        Inspect Receiver:
+          Type: Task
+          Resource: arn:aws:states:::states:startExecution.sync:2
+          Parameters:
+            StateMachineArn: "${ChildWorkflowArn}"
+            Input:
+              receiverId.$: "$.receiverId"
+              receiversDataBucket.$: "$.receiversDataBucket"
+          OutputPath: "$.Output"
+          End: true
+    Next: Prepare Anomaly Notification
+  Prepare Anomaly Notification:
+    Type: Task
+    Resource: "${PrepareAnomalyNotificationArn}"
+    Next: Notify Anomaly Subscribers
+  Notify Anomaly Subscribers:
+    Type: Task
+    Resource: arn:aws:states:::sns:publish
+    Parameters:
+      TopicArn: "${AnomalyTopicArn}"
+      Message.$: "$.notificationMessage"
+    End: true
